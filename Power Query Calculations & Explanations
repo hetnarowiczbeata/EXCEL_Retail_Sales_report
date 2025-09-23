@@ -1,0 +1,64 @@
+fact table sales:
+let
+    Source = Csv.Document(File.Contents("C:\Users\Beata_\Desktop\Beata_data_source\project_salesc\salec.c\retail_store_sales.csv"),[Delimiter=",", Columns=11, Encoding=65001, QuoteStyle=QuoteStyle.None]), // import CSV into Excel
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]), //first row as header
+    #"Filtered Rows" = Table.SelectRows(#"Promoted Headers", each ([Total Spent] <> "")), //deleted total spent, which also didn’t have price per unit or quantity
+    #"Replaced Value" = Table.ReplaceValue(#"Filtered Rows",".",",",Replacer.ReplaceText,{"Price Per Unit", "Quantity", "Total Spent"}), // changing "." to "," to enable calculations
+    #"Removed Other Columns" = Table.SelectColumns(#"Replaced Value",{"Transaction ID", "Customer ID", "Category", "Quantity", "Total Spent", "Payment Method", "Location", "Transaction Date"}),//delete useless columns to optimize performance
+    #"Changed Type" = Table.TransformColumnTypes(#"Removed Other Columns",{{"Transaction ID", type text}, {"Customer ID", type text}, {"Category", type text}, {"Quantity", Int64.Type}, {"Total Spent", type number}, {"Payment Method", type text}, {"Location", type text}, {"Transaction Date", type date}}),//adjust data type for data validation
+    #"Filtered Rows1" = Table.SelectRows(#"Changed Type", each [Transaction Date] < #date(2025, 1, 1)),//Removed 2025 data since there were only a few records, not a full month. Calculations are done by month, so those few days wouldn’t affect the results.
+    #"Added Custom1" = Table.AddColumn(#"Filtered Rows1", "PRICE PER UNIT", each [Total Spent]/[Quantity],type number// I calculated the price per unit based on sales and quantity. I compared the newly calculated price per unit with the original column to ensure the results were accurate. 
+I also did this because there were some gaps in the original price per unit. After confirming the accuracy, I went back to the step where I deleted other columns and removed the original price per unit.
+),
+    #"Merged Queries" = Table.NestedJoin(#"Added Custom1", {"PRICE PER UNIT", "Category"}, #"mapping item", {"PRICE PER UNIT", "Category"}, "mapping item", JoinKind.LeftOuter),
+    #"Expanded mapping item" = Table.ExpandTableColumn(#"Merged Queries", "mapping item", {"ITEM"}, {"ITEM"}) //The item mapping table was created based on the fact table. When I noticed a pattern in category, item, and price, as they often had the same price, I filled the gaps using the "Column from Examples" option in Power Query, extracting useful parts of the data. 
+This allowed me to prepare a vocabulary, which I then loaded into Excel, copied and pasted as values, and reloaded into Power Query. 
+I could have left the calculation as something like if price = 24 and category + "xyz" then item_"x"_"xyz", but I wanted to show the importance of reducing unnecessary calculations. 
+In case a new product appears, I can quickly add a new row. The database is static, so this action isn’t strictly necessary, but I could also create an additional left join to highlight gaps, making it easy to detect new categories that need to be added. More details on how I discovered the pattern are available on my LinkedIn.
+in
+    #"Expanded mapping item"
+
+
+    dim table calendar - Generated with AI:
+    let
+    // 👉 Ustal zakres dat (zmień według potrzeb)
+    StartDate = #date(2022, 1, 1),
+    EndDate   = #date(2025, 12, 31),
+
+    // Lista wszystkich dni
+    DateList = List.Dates(
+        StartDate,
+        Duration.Days(EndDate - StartDate) + 1,
+        #duration(1,0,0,0)
+    ),
+
+    // Zamiana na tabelę
+    DateTable = Table.FromList(DateList, Splitter.SplitByNothing(), {"Date"}),
+
+    // Dodanie kolumn
+    AddYear = Table.AddColumn(DateTable, "Year", each Date.Year([Date]), Int64.Type),
+    AddQuarter = Table.AddColumn(AddYear, "Quarter", each Date.QuarterOfYear([Date]), Int64.Type),
+    AddMonthNum = Table.AddColumn(AddQuarter, "Month", each Date.Month([Date]), Int64.Type),
+    AddMonthName = Table.AddColumn(AddMonthNum, "MonthName", each Date.MonthName([Date])),
+    AddWeekNum = Table.AddColumn(AddMonthName, "WeekOfYear", each Date.WeekOfYear([Date]), Int64.Type),
+    AddDay = Table.AddColumn(AddWeekNum, "Day", each Date.Day([Date]), Int64.Type),
+    AddDayOfWeek = Table.AddColumn(AddDay, "DayOfWeek", each Date.DayOfWeek([Date]), Int64.Type),
+    AddDayOfWeekName = Table.AddColumn(AddDayOfWeek, "DayOfWeekName", each Date.DayOfWeekName([Date])),
+
+    // (opcjonalnie) miesiąc/kwartał w formie tekstowej, np. "2025-Q1"
+    AddYearMonth = Table.AddColumn(AddDayOfWeekName, "YearMonth", each Text.From([Year]) & "-" & Text.PadStart(Text.From([Month]),2,"0")),
+    AddYearQuarter = Table.AddColumn(AddYearMonth, "YearQuarter", each Text.From([Year]) & "-Q" & Text.From([Quarter])),
+    #"Changed Type" = Table.TransformColumnTypes(AddYearQuarter,{{"Date", type date}}),
+    #"Inserted Start of Month" = Table.AddColumn(#"Changed Type", "Start of Month", each Date.StartOfMonth([Date]), type date)
+in
+    #"Inserted Start of Month"
+
+    dim table items - Created based on a table of facts:
+    
+    let
+    Source = Excel.CurrentWorkbook(){[Name="mapping_item"]}[Content],
+    #"Capitalized Each Word" = Table.TransformColumns(Source,{{"ITEM", Text.Proper, type text}, {"Category", Text.Proper, type text}})
+in
+    #"Capitalized Each Word"
+    
+    
